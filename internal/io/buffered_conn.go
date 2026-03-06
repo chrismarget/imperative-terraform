@@ -1,4 +1,4 @@
-package imperative
+package io
 
 import (
 	"bufio"

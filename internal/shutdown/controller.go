@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-const (
-	idleTimeout  = 30 * time.Second
-	graceTimeout = 5 * time.Second
-)
-
 type Controller struct {
 	wg                *sync.WaitGroup
 	mu                *sync.Mutex
@@ -21,7 +16,9 @@ type Controller struct {
 	shutdownChan      chan struct{}
 	discoveryFilePath string
 	idleTimer         *time.Timer
+	idleTimeout       time.Duration
 	graceTimer        *time.Timer
+	graceTimeout      time.Duration
 	logFunc           func(string, ...any)
 }
 
@@ -68,7 +65,7 @@ func (c *Controller) startIdleTimer() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.idleTimer == nil {
-		c.idleTimer = time.AfterFunc(idleTimeout, c.handleIdleTimeout)
+		c.idleTimer = time.AfterFunc(c.idleTimeout, c.handleIdleTimeout)
 	}
 }
 
@@ -85,7 +82,7 @@ func (c *Controller) stopIdleTimer() {
 // handleIdleTimeout is the idle timer callback function. It runs when the idle timer expires,
 // indicating that no clients have connected for the duration of the idle timeout.
 func (c *Controller) handleIdleTimeout() {
-	c.logFunc("shutdown: %s idle timeout expired; removing server discovery file %q now; shutting down socket listener in %s", idleTimeout, c.discoveryFilePath, graceTimeout)
+	c.logFunc("shutdown: %s idle timeout expired; removing server discovery file %q now; shutting down socket listener in %s", c.idleTimeout, c.discoveryFilePath, c.graceTimeout)
 	c.mu.Lock()
 	c.idleTimer = nil
 	c.mu.Unlock()
@@ -110,12 +107,12 @@ func (c *Controller) beginGracePeriod() {
 		c.idleTimer = nil
 	}
 	if c.graceTimer == nil {
-		c.graceTimer = time.AfterFunc(graceTimeout, c.handleGraceTimeout)
+		c.graceTimer = time.AfterFunc(c.graceTimeout, c.handleGraceTimeout)
 	}
 }
 
 func (c *Controller) handleGraceTimeout() {
-	c.logFunc("shutdown: %s grace period expired, shutting down server after %d clients disconnect", graceTimeout, c.clientCount.Load())
+	c.logFunc("shutdown: %s grace period expired, shutting down server after %d clients disconnect", c.graceTimeout, c.clientCount.Load())
 	c.mu.Lock()
 	c.graceTimer = nil
 	c.mu.Unlock()
@@ -133,6 +130,13 @@ func WithDiscoveryFilePath(path string) ControllerOpt {
 func WithLogFunc(f func(string, ...any)) ControllerOpt {
 	return func(c *Controller) {
 		c.logFunc = f
+	}
+}
+
+func WithTimeouts(idle, grace time.Duration) ControllerOpt {
+	return func(c *Controller) {
+		c.idleTimeout = idle
+		c.graceTimeout = grace
 	}
 }
 

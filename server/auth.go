@@ -1,4 +1,4 @@
-package imperative
+package server
 
 import (
 	"crypto/hmac"
@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"io"
 
-	"github.com/chrismarget/imperative-terraform/message"
+	"github.com/chrismarget/imperative-terraform/internal/message"
 )
 
 const nonceSize = 32

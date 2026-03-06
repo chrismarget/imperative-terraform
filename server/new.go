@@ -1,8 +1,9 @@
-package imperative
+package server
 
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 )
@@ -45,9 +46,19 @@ func WithSockFile(path string) ServerOpt {
 	}
 }
 
-func NewServer(opts ...ServerOpt) *Server {
+func WithTimeouts(idle, grace time.Duration) ServerOpt {
+	return func(s *Server) {
+		s.idleTimeout = idle
+		s.graceTimeout = grace
+	}
+}
+
+func New(opts ...ServerOpt) *Server {
 	server := Server{ // defaults
-		logFunc: log.Printf,
+		logFunc:      log.Printf,
+		idleTimeout:  defaultIdleTimeout,
+		graceTimeout: defaultGraceTimeout,
+		config:       defaultServerConfig(),
 	}
 
 	for _, opt := range opts {

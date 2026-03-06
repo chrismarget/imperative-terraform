@@ -1,4 +1,4 @@
-package imperative
+package server
 
 import (
 	"context"
@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/chrismarget/imperative-terraform/diags"
-	"github.com/chrismarget/imperative-terraform/message"
+	"github.com/chrismarget/imperative-terraform/internal/diags"
+	json2 "github.com/chrismarget/imperative-terraform/internal/json"
+	"github.com/chrismarget/imperative-terraform/internal/message"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	dataSourceSchema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -20,26 +21,31 @@ import (
 
 // getBootstrapConfig reads the initial configuration message from the bootstrap client
 // on stdin, saves those values, and returns the provider configuration as a json.RawMessage.
-func (s *Server) getBootstrapConfig() (json.RawMessage, error) {
+func (s *Server) getBootstrapConfig() error {
 	// Read and unpack the configuration from the client via stdin.
 	var config message.Config
 	if err := message.Read(os.Stdin, &config); err != nil {
-		return nil, fmt.Errorf("init: unpacking config: %w", err)
+		return fmt.Errorf("init: unpacking config: %w", err)
 	}
 
 	if err := json.Unmarshal(config.ServerConfig, &s.config); err != nil {
-		return nil, fmt.Errorf("init: parsing server config: %w", err)
+		return fmt.Errorf("init: parsing server config: %w", err)
 	}
 	if err := s.config.validate(); err != nil {
-		return nil, err
+		return err
 	}
 
-	return config.ProviderConfig, nil
+	var err error
+	if s.providerConfig, err = json2.CredentialsIntoURL(config.ProviderConfig); err != nil {
+		return fmt.Errorf("init: updating provider config with credentials: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Server) configure(ctx context.Context) error {
 	// Configure the server and extract the provider configuration.
-	rawMessage, err := s.getBootstrapConfig()
+	err := s.getBootstrapConfig()
 	if err != nil {
 		return err
 	}
@@ -51,7 +57,7 @@ func (s *Server) configure(ctx context.Context) error {
 	}
 
 	// Convert the client-specified provider configuration into a tftypes.Type.
-	rawConfigValue, err := tftypes.ValueFromJSON(rawMessage, pSchema.Type().TerraformType(ctx))
+	rawConfigValue, err := tftypes.ValueFromJSON(s.providerConfig, pSchema.Type().TerraformType(ctx))
 	if err != nil {
 		return fmt.Errorf("init: parsing provider_config %q to terraform value: %w", rawConfigValue, err)
 	}
@@ -64,6 +70,8 @@ func (s *Server) configure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("init: configuring provider: %w", err)
 	}
+	s.dataSourceData = configureResponse.DataSourceData
+	s.resourceData = configureResponse.ResourceData
 
 	return nil
 }
@@ -99,29 +107,55 @@ func (s *Server) createSockFilePath() (func(), error) {
 	}, nil
 }
 
+// loadDataSourceMap populates the server's map of data source type names to their
+// corresponding factory functions, filtering by the client-specified allow list,
+// if any. The map of data  source type names to schemas is initialized to the same
+// size, but schemas are not loaded until they're requested.
 func (s *Server) loadDataSourceMap(providerTypeName string) {
-	// Collect data source functions from the provider
+	// Initialize maps to hold data source schemas and factory functions. Size is based on the
+	// allow list if provided, otherwise on the total number of data sources from the provider.
+	dataSourceFuncs := s.provider.DataSources(context.Background())
+	if len(s.dataSources) == 0 {
+		s.dataSourceSchemas = make(map[string]*dataSourceSchema.Schema, len(dataSourceFuncs))
+		s.dataSourceFuncs = make(map[string]func() datasource.DataSource, len(dataSourceFuncs))
+	} else {
+		s.dataSourceSchemas = make(map[string]*dataSourceSchema.Schema, len(s.dataSources))
+		s.dataSourceFuncs = make(map[string]func() datasource.DataSource, len(s.dataSources))
+	}
+
+	// Collect data source functions from the provider, save the permitted ones.
 	req := datasource.MetadataRequest{ProviderTypeName: providerTypeName}
 	var resp datasource.MetadataResponse
-	s.dataSourceSchemas = make(map[string]*dataSourceSchema.Schema, len(s.dataSources))
-	s.dataSourceFuncs = make(map[string]func() datasource.DataSource, len(s.dataSources))
 	for _, f := range s.provider.DataSources(context.Background()) {
 		f().Metadata(context.Background(), req, &resp)
-		if s.dataSources[resp.TypeName] {
+		if s.dataSources[resp.TypeName] || len(s.dataSources) == 0 {
 			s.dataSourceFuncs[resp.TypeName] = f
 		}
 	}
 }
 
+// loadResourceMap populates the server's map of resource type names to their
+// corresponding factory functions, filtering by the client-specified allow list,
+// if any. The map of resource type names to schemas is initialized to the same
+// size, but schemas are not loaded until they're requested.
 func (s *Server) loadResourceMap(providerTypeName string) {
-	// Collect resource functions from the provider
+	// Initialize maps to hold resource schemas and factory functions. Size is based on the
+	// allow list if provided, otherwise on the total number of resources from the provider.
+	resourceFuncs := s.provider.Resources(context.Background())
+	if len(s.resources) == 0 {
+		s.resourceSchemas = make(map[string]*resourceSchema.Schema, len(resourceFuncs))
+		s.resourceFuncs = make(map[string]func() resource.Resource, len(resourceFuncs))
+	} else {
+		s.resourceSchemas = make(map[string]*resourceSchema.Schema, len(s.resources))
+		s.resourceFuncs = make(map[string]func() resource.Resource, len(s.resources))
+	}
+
+	// Collect resource functions from the provider, save the permitted ones.
 	req := resource.MetadataRequest{ProviderTypeName: providerTypeName}
 	var resp resource.MetadataResponse
-	s.resourceSchemas = make(map[string]*resourceSchema.Schema, len(s.resources))
-	s.resourceFuncs = make(map[string]func() resource.Resource, len(s.resources))
 	for _, f := range s.provider.Resources(context.Background()) {
 		f().Metadata(context.Background(), req, &resp)
-		if s.resources[resp.TypeName] {
+		if s.resources[resp.TypeName] || len(s.resources) == 0 {
 			s.resourceFuncs[resp.TypeName] = f
 		}
 	}

@@ -11,8 +11,8 @@ const (
 	TypeHello             = "server_hello"
 	TypeListening         = "listening"
 
-	TypeDataSourceRequest  = "data_source_read_request"
-	TypeDataSourceResponse = "data_source_read_response"
+	TypeDataSourceRequest  = "data_source_request"
+	TypeDataSourceResponse = "data_source_response"
 	TypeResourceRequest    = "resource_request"
 	TypeResourceResponse   = "resource_response"
 )

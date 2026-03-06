@@ -1,4 +1,4 @@
-package imperative
+package server
 
 import (
 	"context"
@@ -10,9 +10,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/chrismarget/imperative-terraform/diags"
-	"github.com/chrismarget/imperative-terraform/message"
-	"github.com/chrismarget/imperative-terraform/shutdown"
+	"github.com/chrismarget/imperative-terraform/internal/diags"
+	io2 "github.com/chrismarget/imperative-terraform/internal/io"
+	"github.com/chrismarget/imperative-terraform/internal/message"
+	"github.com/chrismarget/imperative-terraform/internal/shutdown"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -29,7 +30,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn, sc *shutdo
 	}()
 
 	// Wrap the connection with buffering to allow safe creation of new decoders.
-	bconn := NewBufferedConn(conn)
+	bconn := io2.NewBufferedConn(conn)
 
 	// Authenticate the client, as required.
 	if s.config.Secret != nil && !s.authClient(bconn) {
@@ -76,13 +77,13 @@ func (s *Server) handleMessages(ctx context.Context, conn io.ReadWriter) {
 			return
 		case message.TypeDataSourceRequest:
 			s.handleDataSource(ctx, conn, msg.Payload)
-		//case message.TypeResourceCreateRequest:
+		// case message.TypeResourceCreateRequest:
 		//	s.handleResourceCreate(conn, req.Payload)
-		//case message.TypeResourceReadRequest:
+		// case message.TypeResourceReadRequest:
 		//	s.handleResourceRead(conn, req.Payload)
-		//case message.TypeResourceUpdateRequest:
+		// case message.TypeResourceUpdateRequest:
 		//	s.handleResourceUpdate(conn, req.Payload)
-		//case message.TypeResourceDeleteRequest:
+		// case message.TypeResourceDeleteRequest:
 		//	s.handleResourceDelete(conn, req.Payload)
 		default:
 			s.logFunc("connection: unknown message type: %q", msg.Type)
@@ -100,6 +101,7 @@ func (s *Server) sendError(w io.Writer, errMsg string) {
 
 // Placeholder handlers for CRUD operations - to be implemented.
 func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json.RawMessage) {
+	// Unpack the incoming message
 	var msg message.DataSourceRequest
 	if err := message.UnpackPayload(&msg, payload); err != nil {
 		s.sendError(w, fmt.Sprintf("invalid %s", message.TypeDataSourceRequest))
@@ -107,20 +109,34 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 		return
 	}
 
-	// todo - invoke the data source Configure() method right here
-	//ds := s.dataSourceFuncs[msg.Name]()
-	//if ds, ok := ds.(datasource.DataSourceWithConfigure); ok {
-	//	ds.Configure(ctx)
-	//}
-	//ds.Read()
+	// Find the function which returns the required DataSource.
+	dsFunc, ok := s.dataSourceFuncs[msg.Name]
+	if !ok {
+		s.sendError(w, fmt.Sprintf("invalid data source name %q", msg.Name))
+		return
+	}
 
+	// Instantiate and configure (if required) the DataSource.
+	ds := dsFunc()
+	if ds, ok := ds.(datasource.DataSourceWithConfigure); ok {
+		req := datasource.ConfigureRequest{ProviderData: s.dataSourceData}
+		var resp datasource.ConfigureResponse
+		ds.Configure(ctx, req, &resp)
+		if err := diags.Handle(resp.Diagnostics, s.logFunc); err != nil {
+			s.sendError(w, "internal error: configuring data source")
+			return
+		}
+
+	}
+
+	// Extract the DataSource schema.
 	schema, ok := s.dataSourceSchema(msg.Name)
 	if !ok {
 		s.sendError(w, fmt.Sprintf("invalid data source name %s", msg.Name))
 		return
 	}
 
-	// Convert the client-specified provider configuration into a tftypes.Type.
+	// Convert the client-specified DataSource config into a tftypes.Type.
 	raw, err := tftypes.ValueFromJSON(msg.Config, schema.Type().TerraformType(ctx))
 	if err != nil {
 		s.sendError(w, "config: internal error")
@@ -128,11 +144,18 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 		return
 	}
 
-	toCtx, cancel := context.WithDeadline(ctx, time.Now().Add(s.config.ApiTimeout))
-	defer cancel()
 	req := datasource.ReadRequest{Config: tfsdk.Config{Raw: raw, Schema: schema}}
-	resp := datasource.ReadResponse{}
-	s.dataSourceFuncs[msg.Name]().Read(toCtx, req, &resp)
+	resp := datasource.ReadResponse{
+		State: tfsdk.State{
+			Raw:    tftypes.Value{},
+			Schema: schema,
+		},
+		Diagnostics: nil,
+		Deferred:    nil,
+	}
+	deadline, cancel := context.WithDeadline(ctx, time.Now().Add(s.config.APITimeout))
+	defer cancel()
+	ds.Read(deadline, req, &resp)
 	err = diags.Handle(resp.Diagnostics, s.logFunc)
 	if err != nil {
 		s.sendError(w, "internal error: data source read")
@@ -140,12 +163,12 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 		return
 	}
 
-	var state interface{}
-	if err := resp.State.Raw.As(&state); err != nil {
-		s.sendError(w, "internal error: marshaling state")
-		s.logFunc("handleDataSource: State.Raw.As: %v", err)
-		return
-	}
+	//var state interface{}
+	//if err := resp.State.Raw.As(&state); err != nil {
+	//	s.sendError(w, "internal error: marshaling state")
+	//	s.logFunc("handleDataSource: State.Raw.As: %v", err)
+	//	return
+	//}
 }
 
 //// ValueToTerraformJSON takes a framework Value and produces Terraform‑compatible JSON.

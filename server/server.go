@@ -1,7 +1,8 @@
-package imperative
+package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -10,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chrismarget/imperative-terraform/shutdown"
+	"github.com/chrismarget/imperative-terraform/internal/shutdown"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	dataSourceSchema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -19,24 +20,9 @@ import (
 )
 
 const (
-	acceptBackoffMS   = 50
-	apiTimeoutDefault = 30 * time.Second
-	socketPath        = "imperative-terraform-server.sock"
+	acceptBackoffMS = 50
+	socketPath      = "imperative-terraform-server.sock"
 )
-
-type serverConfig struct {
-	Secret        []byte        `json:"secret"`
-	DiscoveryFile string        `json:"discovery_file"`
-	ApiTimeout    time.Duration `json:"api_timeout"`
-}
-
-func (c serverConfig) validate() error {
-	if _, err := os.Stat(c.DiscoveryFile); err != nil {
-		return fmt.Errorf("server_config: stat discovery file %q: %w", c.DiscoveryFile, err)
-	}
-
-	return nil
-}
 
 type Server struct {
 	config            serverConfig
@@ -51,6 +37,11 @@ type Server struct {
 	resourceSchemas   map[string]*resourceSchema.Schema
 	dataSourceSchemas map[string]*dataSourceSchema.Schema
 	providerVersion   string
+	providerConfig    json.RawMessage
+	idleTimeout       time.Duration
+	graceTimeout      time.Duration
+	dataSourceData    any
+	resourceData      any
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -65,6 +56,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	s.sc = shutdown.New(
 		shutdown.WithDiscoveryFilePath(s.config.DiscoveryFile),
 		shutdown.WithLogFunc(s.logFunc),
+		shutdown.WithTimeouts(s.idleTimeout, s.graceTimeout),
 	)
 
 	// Invent a socket file path if necessary.

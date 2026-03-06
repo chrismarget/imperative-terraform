@@ -1,11 +1,11 @@
-package imperative
+package server
 
 import (
 	"context"
 	"fmt"
 	"sync"
 
-	"github.com/chrismarget/imperative-terraform/diags"
+	"github.com/chrismarget/imperative-terraform/internal/diags"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	dataSourceSchema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
