@@ -136,7 +136,7 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 		return
 	}
 
-	// Convert the client-specified DataSource config into a tftypes.Type.
+	// Convert the client-specified DataSource config into a tftypes.Value.
 	raw, err := tftypes.ValueFromJSON(msg.Config, schema.Type().TerraformType(ctx))
 	if err != nil {
 		s.sendError(w, "config: internal error")
