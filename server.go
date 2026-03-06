@@ -24,39 +24,46 @@ const (
 	socketPath        = "imperative-terraform-server.sock"
 )
 
-var allowedResources = map[string]bool{
-	"apstra_datacenter_routing_zone": true,
+type serverConfig struct {
+	Secret        []byte        `json:"secret"`
+	DiscoveryFile string        `json:"discovery_file"`
+	ApiTimeout    time.Duration `json:"api_timeout"`
 }
 
-var allowedDataSources = map[string]bool{
-	"apstra_datacenter_routing_zone": true,
+func (c serverConfig) validate() error {
+	if _, err := os.Stat(c.DiscoveryFile); err != nil {
+		return fmt.Errorf("server_config: stat discovery file %q: %w", c.DiscoveryFile, err)
+	}
+
+	return nil
 }
 
 type Server struct {
-	apiTimeout        time.Duration
-	secret            []byte
+	config            serverConfig
 	sockPath          string
 	provider          provider.Provider
 	sc                *shutdown.Controller
 	logFunc           func(string, ...any)
+	resources         map[string]bool
+	dataSources       map[string]bool
 	resourceFuncs     map[string]func() resource.Resource
 	dataSourceFuncs   map[string]func() datasource.DataSource
 	resourceSchemas   map[string]*resourceSchema.Schema
 	dataSourceSchemas map[string]*dataSourceSchema.Schema
-	discoveryFilePath string
+	providerVersion   string
 }
 
 func (s *Server) Serve(ctx context.Context) error {
 	// Read the provider configuration, daemon discovery file path, and shared
 	// secret from stdin. Configure the provider.
-	err := s.configureProvider(ctx)
+	err := s.configure(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Create shutdown controller with a running idle timer.
 	s.sc = shutdown.New(
-		shutdown.WithDiscoveryFilePath(s.discoveryFilePath),
+		shutdown.WithDiscoveryFilePath(s.config.DiscoveryFile),
 		shutdown.WithLogFunc(s.logFunc),
 	)
 

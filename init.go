@@ -2,6 +2,7 @@ package imperative
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,22 +18,31 @@ import (
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
-func (s *Server) configureProvider(ctx context.Context) error {
+// getBootstrapConfig reads the initial configuration message from the bootstrap client
+// on stdin, saves those values, and returns the provider configuration as a json.RawMessage.
+func (s *Server) getBootstrapConfig() (json.RawMessage, error) {
 	// Read and unpack the configuration from the client via stdin.
 	var config message.Config
 	if err := message.Read(os.Stdin, &config); err != nil {
-		return fmt.Errorf("init: unpacking config: %w", err)
-	}
-	if config.DiscoveryFilePath == "" {
-		return fmt.Errorf("init: discovery_file_path is required in %s message", message.TypeConfig)
-	}
-	if _, err := os.Stat(config.DiscoveryFilePath); err != nil {
-		return fmt.Errorf("init: stat discovery file path %q: %w", config.DiscoveryFilePath, err)
+		return nil, fmt.Errorf("init: unpacking config: %w", err)
 	}
 
-	// Save client-specified server parameters.
-	s.secret = config.Secret
-	s.discoveryFilePath = config.DiscoveryFilePath
+	if err := json.Unmarshal(config.ServerConfig, &s.config); err != nil {
+		return nil, fmt.Errorf("init: parsing server config: %w", err)
+	}
+	if err := s.config.validate(); err != nil {
+		return nil, err
+	}
+
+	return config.ProviderConfig, nil
+}
+
+func (s *Server) configure(ctx context.Context) error {
+	// Configure the server and extract the provider configuration.
+	rawMessage, err := s.getBootstrapConfig()
+	if err != nil {
+		return err
+	}
 
 	// Get the provider schema.
 	pSchema, err := s.providerSchema()
@@ -41,14 +51,14 @@ func (s *Server) configureProvider(ctx context.Context) error {
 	}
 
 	// Convert the client-specified provider configuration into a tftypes.Type.
-	raw, err := tftypes.ValueFromJSON(config.ProviderConfig, pSchema.Type().TerraformType(ctx))
+	rawConfigValue, err := tftypes.ValueFromJSON(rawMessage, pSchema.Type().TerraformType(ctx))
 	if err != nil {
-		return fmt.Errorf("init: parsing provider_config %q to terraform value: %w", config.ProviderConfig, err)
+		return fmt.Errorf("init: parsing provider_config %q to terraform value: %w", rawConfigValue, err)
 	}
 
 	// Configure the provider.
 	configureResponse := new(provider.ConfigureResponse)
-	configureRequest := provider.ConfigureRequest{Config: tfsdk.Config{Raw: raw, Schema: pSchema}}
+	configureRequest := provider.ConfigureRequest{Config: tfsdk.Config{Raw: rawConfigValue, Schema: pSchema}}
 	s.provider.Configure(ctx, configureRequest, configureResponse)
 	err = diags.Handle(configureResponse.Diagnostics, s.logFunc)
 	if err != nil {
@@ -61,7 +71,7 @@ func (s *Server) configureProvider(ctx context.Context) error {
 // announceStartup writes a listening message to our bootstrap client on stdout.
 func (s *Server) announceStartup() error {
 	payload := message.Listening{
-		AuthNRequired: s.secret != nil,
+		AuthNRequired: s.config.Secret != nil,
 		ListeningOn:   s.sockPath,
 	}
 
@@ -93,11 +103,11 @@ func (s *Server) loadDataSourceMap(providerTypeName string) {
 	// Collect data source functions from the provider
 	req := datasource.MetadataRequest{ProviderTypeName: providerTypeName}
 	var resp datasource.MetadataResponse
-	s.dataSourceSchemas = make(map[string]*dataSourceSchema.Schema, len(allowedDataSources))
-	s.dataSourceFuncs = make(map[string]func() datasource.DataSource, len(allowedDataSources))
+	s.dataSourceSchemas = make(map[string]*dataSourceSchema.Schema, len(s.dataSources))
+	s.dataSourceFuncs = make(map[string]func() datasource.DataSource, len(s.dataSources))
 	for _, f := range s.provider.DataSources(context.Background()) {
 		f().Metadata(context.Background(), req, &resp)
-		if allowedDataSources[resp.TypeName] {
+		if s.dataSources[resp.TypeName] {
 			s.dataSourceFuncs[resp.TypeName] = f
 		}
 	}
@@ -107,11 +117,11 @@ func (s *Server) loadResourceMap(providerTypeName string) {
 	// Collect resource functions from the provider
 	req := resource.MetadataRequest{ProviderTypeName: providerTypeName}
 	var resp resource.MetadataResponse
-	s.resourceSchemas = make(map[string]*resourceSchema.Schema, len(allowedResources))
-	s.resourceFuncs = make(map[string]func() resource.Resource, len(allowedResources))
+	s.resourceSchemas = make(map[string]*resourceSchema.Schema, len(s.resources))
+	s.resourceFuncs = make(map[string]func() resource.Resource, len(s.resources))
 	for _, f := range s.provider.Resources(context.Background()) {
 		f().Metadata(context.Background(), req, &resp)
-		if allowedResources[resp.TypeName] {
+		if s.resources[resp.TypeName] {
 			s.resourceFuncs[resp.TypeName] = f
 		}
 	}

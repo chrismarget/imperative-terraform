@@ -45,9 +45,8 @@ type ChallengeResponse struct {
 }
 
 type Config struct {
-	ProviderConfig    json.RawMessage `json:"provider_config"`
-	Secret            []byte          `json:"secret"`
-	DiscoveryFilePath string          `json:"discovery_file_path"`
+	ServerConfig   json.RawMessage `json:"server_config"`
+	ProviderConfig json.RawMessage `json:"provider_config"`
 }
 
 type Error struct {

@@ -32,7 +32,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn, sc *shutdo
 	bconn := NewBufferedConn(conn)
 
 	// Authenticate the client, as required.
-	if s.secret != nil && !s.authClient(bconn) {
+	if s.config.Secret != nil && !s.authClient(bconn) {
 		s.logFunc("server: client authentication failure")
 		return
 	}
@@ -128,7 +128,7 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 		return
 	}
 
-	toCtx, cancel := context.WithDeadline(ctx, time.Now().Add(s.apiTimeout))
+	toCtx, cancel := context.WithDeadline(ctx, time.Now().Add(s.config.ApiTimeout))
 	defer cancel()
 	req := datasource.ReadRequest{Config: tfsdk.Config{Raw: raw, Schema: schema}}
 	resp := datasource.ReadResponse{}

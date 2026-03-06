@@ -16,7 +16,7 @@ const nonceSize = 32
 // is not required, and false otherwise.
 func (s *Server) authClient(rw io.ReadWriter) bool {
 	// If no secret configured, skip authentication.
-	if s.secret == nil || len(s.secret) == 0 {
+	if s.config.Secret == nil || len(s.config.Secret) == 0 {
 		return true
 	}
 
@@ -28,7 +28,7 @@ func (s *Server) authClient(rw io.ReadWriter) bool {
 	}
 
 	// Compute expected HMAC.
-	mac := hmac.New(sha256.New, s.secret)
+	mac := hmac.New(sha256.New, s.config.Secret)
 	mac.Write(nonce)
 	expectedMAC := mac.Sum(nil)
 

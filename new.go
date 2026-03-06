@@ -3,16 +3,27 @@ package imperative
 import (
 	"context"
 	"log"
-	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 )
 
 type ServerOpt func(*Server)
 
-func WithAPITimeout(d time.Duration) ServerOpt {
+func WithDataSources(ds []string) ServerOpt {
 	return func(s *Server) {
-		s.apiTimeout = d
+		s.dataSources = make(map[string]bool, len(ds))
+		for _, d := range ds {
+			s.dataSources[d] = true
+		}
+	}
+}
+
+func WithResources(rs []string) ServerOpt {
+	return func(s *Server) {
+		s.resources = make(map[string]bool, len(rs))
+		for _, r := range rs {
+			s.resources[r] = true
+		}
 	}
 }
 
@@ -36,8 +47,7 @@ func WithSockFile(path string) ServerOpt {
 
 func NewServer(opts ...ServerOpt) *Server {
 	server := Server{ // defaults
-		apiTimeout: apiTimeoutDefault,
-		logFunc:    log.Printf,
+		logFunc: log.Printf,
 	}
 
 	for _, opt := range opts {
@@ -48,8 +58,9 @@ func NewServer(opts ...ServerOpt) *Server {
 		panic("provider must be specified using NewServer(WithProvider(...))")
 	}
 
-	// Gather provider metadata (we need its name)
+	// Gather provider metadata
 	var pmdResp provider.MetadataResponse
+	server.providerVersion = pmdResp.Version
 	server.provider.Metadata(context.Background(), provider.MetadataRequest{}, &pmdResp)
 
 	// Collect resource and data source functions from the provider.
