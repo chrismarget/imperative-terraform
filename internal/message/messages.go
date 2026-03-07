@@ -71,8 +71,8 @@ type DataSourceRequest struct {
 }
 
 type DataSourceResponse struct {
-	Name   string          `json:"name"`
-	Config json.RawMessage `json:"config"`
+	Name  string          `json:"name"`
+	State json.RawMessage `json:"state"`
 }
 
 type ResourceRequest struct {

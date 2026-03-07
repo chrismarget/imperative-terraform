@@ -174,8 +174,8 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 
 	// Send the response back to the client
 	respMsg := message.DataSourceResponse{
-		Name:   msg.Name,
-		Config: json.RawMessage(stateJSON),
+		Name:  msg.Name,
+		State: json.RawMessage(stateJSON),
 	}
 	if err := message.Write(w, &respMsg); err != nil {
 		s.logFunc("connection: writing data source response: %v", err)
