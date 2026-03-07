@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/chrismarget/imperative-terraform/internal/diags"
-	json2 "github.com/chrismarget/imperative-terraform/internal/json"
+	ijson "github.com/chrismarget/imperative-terraform/internal/json"
 	"github.com/chrismarget/imperative-terraform/internal/message"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	dataSourceSchema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -36,7 +36,7 @@ func (s *Server) getBootstrapConfig() error {
 	}
 
 	var err error
-	if s.providerConfig, err = json2.CredentialsIntoURL(config.ProviderConfig); err != nil {
+	if s.providerConfig, err = ijson.CredentialsIntoURL(config.ProviderConfig); err != nil {
 		return fmt.Errorf("init: updating provider config with credentials: %w", err)
 	}
 

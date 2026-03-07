@@ -11,7 +11,8 @@ import (
 	"time"
 
 	"github.com/chrismarget/imperative-terraform/internal/diags"
-	io2 "github.com/chrismarget/imperative-terraform/internal/io"
+	iio "github.com/chrismarget/imperative-terraform/internal/io"
+	ijson "github.com/chrismarget/imperative-terraform/internal/json"
 	"github.com/chrismarget/imperative-terraform/internal/message"
 	"github.com/chrismarget/imperative-terraform/internal/shutdown"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -30,7 +31,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn, sc *shutdo
 	}()
 
 	// Wrap the connection with buffering to allow safe creation of new decoders.
-	bconn := io2.NewBufferedConn(conn)
+	bconn := iio.NewBufferedConn(conn)
 
 	// Authenticate the client, as required.
 	if s.config.Secret != nil && !s.authClient(bconn) {
@@ -163,31 +164,24 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 		return
 	}
 
-	//var state interface{}
-	//if err := resp.State.Raw.As(&state); err != nil {
-	//	s.sendError(w, "internal error: marshaling state")
-	//	s.logFunc("handleDataSource: State.Raw.As: %v", err)
-	//	return
-	//}
-}
+	// Convert the state value to JSON
+	stateJSON, err := ijson.ValueToJSON(resp.State.Raw)
+	if err != nil {
+		s.sendError(w, "internal error: marshaling state")
+		s.logFunc("handleDataSource: converting state to json: %v", err)
+		return
+	}
 
-//// ValueToTerraformJSON takes a framework Value and produces Terraform‑compatible JSON.
-//func ValueToTerraformJSON(ctx context.Context, val tftypes.Value) ([]byte, error) {
-//	// Convert the framework value to a cty.Value
-//	ctyp, err := val.As(cty.DynamicPseudoType)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	// Now convert the cty.Value to a Go representation
-//	goVal, err := gocty.CtyValueToGoValue(ctyp, reflect.TypeOf(interface{}(nil)))
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	// Finally marshal to JSON
-//	return json.Marshal(goVal)
-//}
+	// Send the response back to the client
+	respMsg := message.DataSourceResponse{
+		Name:   msg.Name,
+		Config: json.RawMessage(stateJSON),
+	}
+	if err := message.Write(w, &respMsg); err != nil {
+		s.logFunc("connection: writing data source response: %v", err)
+		return
+	}
+}
 
 // hello writes information about the server to the client.
 func (s *Server) hello(w io.Writer) error {
