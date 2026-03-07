@@ -108,14 +108,14 @@ func (s *Server) createSockFilePath() (func(), error) {
 }
 
 // loadDataSourceMap populates the server's map of data source type names to their
-// corresponding factory functions, filtering by the client-specified allow list,
-// if any. The map of data  source type names to schemas is initialized to the same
+// corresponding factory functions, filtered by the client-specified allow list,
+// if any. The map of data source type names to schemas is initialized to the same
 // size, but schemas are not loaded until they're requested.
 func (s *Server) loadDataSourceMap(providerTypeName string) {
 	// Initialize maps to hold data source schemas and factory functions. Size is based on the
 	// allow list if provided, otherwise on the total number of data sources from the provider.
 	dataSourceFuncs := s.provider.DataSources(context.Background())
-	if len(s.dataSources) == 0 {
+	if s.dataSources == nil {
 		s.dataSourceSchemas = make(map[string]*dataSourceSchema.Schema, len(dataSourceFuncs))
 		s.dataSourceFuncs = make(map[string]func() datasource.DataSource, len(dataSourceFuncs))
 	} else {
@@ -128,21 +128,21 @@ func (s *Server) loadDataSourceMap(providerTypeName string) {
 	var resp datasource.MetadataResponse
 	for _, f := range s.provider.DataSources(context.Background()) {
 		f().Metadata(context.Background(), req, &resp)
-		if s.dataSources[resp.TypeName] || len(s.dataSources) == 0 {
+		if s.dataSources[resp.TypeName] || s.dataSources == nil {
 			s.dataSourceFuncs[resp.TypeName] = f
 		}
 	}
 }
 
 // loadResourceMap populates the server's map of resource type names to their
-// corresponding factory functions, filtering by the client-specified allow list,
+// corresponding factory functions, filtered by the client-specified allow list,
 // if any. The map of resource type names to schemas is initialized to the same
 // size, but schemas are not loaded until they're requested.
 func (s *Server) loadResourceMap(providerTypeName string) {
 	// Initialize maps to hold resource schemas and factory functions. Size is based on the
 	// allow list if provided, otherwise on the total number of resources from the provider.
 	resourceFuncs := s.provider.Resources(context.Background())
-	if len(s.resources) == 0 {
+	if s.resources == nil {
 		s.resourceSchemas = make(map[string]*resourceSchema.Schema, len(resourceFuncs))
 		s.resourceFuncs = make(map[string]func() resource.Resource, len(resourceFuncs))
 	} else {
@@ -155,7 +155,7 @@ func (s *Server) loadResourceMap(providerTypeName string) {
 	var resp resource.MetadataResponse
 	for _, f := range s.provider.Resources(context.Background()) {
 		f().Metadata(context.Background(), req, &resp)
-		if s.resources[resp.TypeName] || len(s.resources) == 0 {
+		if s.resources[resp.TypeName] || s.resources == nil {
 			s.resourceFuncs[resp.TypeName] = f
 		}
 	}

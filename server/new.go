@@ -74,9 +74,9 @@ func New(opts ...ServerOpt) *Server {
 	server.providerVersion = pmdResp.Version
 	server.provider.Metadata(context.Background(), provider.MetadataRequest{}, &pmdResp)
 
-	// Collect resource and data source functions from the provider.
-	server.loadResourceMap(pmdResp.TypeName)
+	// Collect data source and resource functions from the provider.
 	server.loadDataSourceMap(pmdResp.TypeName)
+	server.loadResourceMap(pmdResp.TypeName)
 
 	return &server
 }
