@@ -84,7 +84,6 @@ type ResourceRequest struct {
 }
 
 type ResourceResponse struct {
-	Name   string          `json:"name"`
-	Method string          `json:"method"`
-	State  json.RawMessage `json:"state"`
+	Name  string          `json:"name"`
+	State json.RawMessage `json:"state"`
 }
