@@ -8,9 +8,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
-// ValueToJSON converts a tftypes.Value to JSON bytes, handling all Terraform types.
+// ValueTo converts a tftypes.Value to JSON bytes, handling all Terraform types.
 // This reverses what tftypes.ValueFromJSON does.
-func ValueToJSON(val tftypes.Value) ([]byte, error) {
+func ValueTo(val tftypes.Value) ([]byte, error) {
 	// Convert the tftypes.Value to a generic Go value
 	goVal, err := tftypesToGoValue(val)
 	if err != nil {

@@ -138,7 +138,7 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 	}
 
 	// Convert the client-specified DataSource config into a tftypes.Value.
-	raw, err := tftypes.ValueFromJSON(msg.Config, schema.Type().TerraformType(ctx))
+	raw, err := ijson.ValueFrom(msg.Config, schema.Type().TerraformType(ctx))
 	if err != nil {
 		s.sendError(w, "config: internal error")
 		s.logFunc("handleDataSource: ValueFromJSON: %v", err)
@@ -165,7 +165,7 @@ func (s *Server) handleDataSource(ctx context.Context, w io.Writer, payload json
 	}
 
 	// Convert the state value to JSON
-	stateJSON, err := ijson.ValueToJSON(resp.State.Raw)
+	stateJSON, err := ijson.ValueTo(resp.State.Raw)
 	if err != nil {
 		s.sendError(w, "internal error: marshaling state")
 		s.logFunc("handleDataSource: converting state to json: %v", err)
