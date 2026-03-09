@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	ijson "github.com/chrismarget/imperative-terraform/internal/json"
 	"os"
 	"path/filepath"
 
 	"github.com/chrismarget/imperative-terraform/internal/diags"
-	ijson "github.com/chrismarget/imperative-terraform/internal/json"
 	"github.com/chrismarget/imperative-terraform/internal/message"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	dataSourceSchema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	resourceSchema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
-	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
 // getBootstrapConfig reads the initial configuration message from the bootstrap client
@@ -35,10 +34,7 @@ func (s *Server) getBootstrapConfig() error {
 		return err
 	}
 
-	var err error
-	if s.providerConfig, err = ijson.CredentialsIntoURL(config.ProviderConfig); err != nil {
-		return fmt.Errorf("init: updating provider config with credentials: %w", err)
-	}
+	s.providerConfig = config.ProviderConfig
 
 	return nil
 }
@@ -57,7 +53,7 @@ func (s *Server) configure(ctx context.Context) error {
 	}
 
 	// Convert the client-specified provider configuration into a tftypes.Type.
-	rawConfigValue, err := tftypes.ValueFromJSON(s.providerConfig, pSchema.Type().TerraformType(ctx))
+	rawConfigValue, err := ijson.ValueFrom(s.providerConfig, pSchema.Type().TerraformType(ctx))
 	if err != nil {
 		return fmt.Errorf("init: parsing provider_config %q to terraform value: %w", rawConfigValue, err)
 	}
